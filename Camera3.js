@@ -44,6 +44,23 @@ camera.position.set(3.5, 1.8, -3.5);
 camera.lookAt(0, 0, 0);
 
 
+// Cél: ne legyen több, mint kb. 1.3 millió ténylegesen renderelt pixel
+// (ez a szám finomhangolható — kísérletezz vele a te jelenetedhez)
+const MAX_RENDER_PIXELS = 1_300_000;
+
+function computeAdaptivePixelRatio(basePixelRatio) {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const requestedPixels = width * height * basePixelRatio * basePixelRatio;
+
+    if (requestedPixels <= MAX_RENDER_PIXELS) {
+        return basePixelRatio; // belefér a büdzsébe, mehet az eredeti érték
+    }
+
+    // Ha túllépné a büdzsét, arányosan csökkentjük a pixelRatio-t
+    const scale = Math.sqrt(MAX_RENDER_PIXELS / (width * height));
+    return Math.max(0.6, scale); // ne menjünk 0.6 alá, az már túl elmosódott lenne
+}
 
 // Egyszeri, indításkori döntés — eszköz alapján, NEM futásidejű FPS alapján
 const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
@@ -59,6 +76,9 @@ const profile = isLowEndDevice
     : isMobile
         ? { pixelRatio: 1.15, antialias: true, shadows: true, shadowMapSize: 1024, exposure: 1.05 }
         : { pixelRatio: Math.min(window.devicePixelRatio || 1, 1.75), antialias: true, shadows: true, shadowMapSize: 1024, exposure: 1.12 };
+
+// Felülírjuk a pixelRatio-t a TÉNYLEGES viewport-méret alapján, eszköz-kategóriától függetlenül
+profile.pixelRatio = computeAdaptivePixelRatio(profile.pixelRatio);
 
 const canvas = document.querySelector("#bg");
 const container = canvas?.parentElement || document.body;
@@ -292,6 +312,11 @@ function updateCameraProjection() {
     const aspect = width / height;
 
     renderer.setSize(width, height, false);
+
+     const adaptivePixelRatio = computeAdaptivePixelRatio(
+        isLowEndDevice ? 1.0 : isMobile ? 1.15 : Math.min(window.devicePixelRatio || 1, 1.75)
+    );
+    renderer.setPixelRatio(adaptivePixelRatio);
 
     camera.aspect = aspect;
 
