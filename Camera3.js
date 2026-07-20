@@ -92,8 +92,8 @@ const skipAntialias = isPhone && dpr >= 2;
 const profiles = {
     0: { // LOW TIER
         
-        pixelRatio: Math.min(dpr, 1.25), // Alacsonyabb felbontásból indítunk
-        antialias: false, 
+        pixelRatio: Math.min(dpr, 1.15), // Alacsonyabb felbontásból indítunk
+        antialias: true, 
         shadows: true, 
         shadowMapSize: 206, 
         exposure: 1.0,
@@ -103,8 +103,8 @@ const profiles = {
     },
     1: { // MID TIER (Tabletek, átlagos mobilok)
         
-        pixelRatio: Math.min(dpr, 1.5), 
-        antialias: !skipAntialias, // Okos döntés alapján
+        pixelRatio: Math.min(dpr, 1.3), 
+        antialias: true, // Okos döntés alapján
         shadows: true, 
         shadowMapSize: 512, // Kisebb árnyéktérkép
         exposure: 1.05,
