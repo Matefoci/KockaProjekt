@@ -5,11 +5,11 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 
 
 const scene = new THREE.Scene();
-// Nagyon világos, letisztult, meleg törtfehér:
 scene.background = new THREE.Color(0xf9f7f4);
-
-// ... pár sorral lejjebb (fontos, hogy a köd is ugyanaz a szín legyen!) ...
 scene.fog = new THREE.Fog(0xf9f7f4, 1.5, 45);
+
+const canvas = document.querySelector("#bg");
+const container = canvas?.parentElement || document.body;
 
 
 const sun = new THREE.DirectionalLight(0xfff1e0, 0.8);
@@ -27,18 +27,6 @@ sun.shadow.camera.near = 0.5;
 sun.shadow.camera.far = 20;
 scene.add(sun);
 
-/*
-const fillLight = new THREE.PointLight(0xffe8cc, 4.2, 14, 2);
-fillLight.position.set(3.2, 2, -2.4);
-fillLight.castShadow = false;
-scene.add(fillLight);
-
-
-const rimLight = new THREE.PointLight(0x8fb1ff, 1.1, 17, 2);
-rimLight.position.set(-3.2, 2, 2.8);
-rimLight.castShadow = false;
-scene.add(rimLight);
-*/
 
 const DEFAULT_FOV = 22;
 const camera = new THREE.PerspectiveCamera(DEFAULT_FOV, window.innerWidth / window.innerHeight, 0.1, 100);
@@ -46,19 +34,13 @@ camera.position.set(3.3, 1.5, -3.3);
 camera.lookAt(0, 0.1, 0);
 
 
-// Cél: ne legyen több, mint kb. 1.3 millió ténylegesen renderelt pixel
-// (ez a szám finomhangolható — kísérletezz vele a te jelenetedhez)
-const MAX_RENDER_PIXELS = 1_800_000;
+function computeAdaptivePixelRatio(basePixelRatio, maxRenderPixels, minPixelRatio, renderWidth, renderHeight) {
+    const requestedPixels = renderWidth * renderHeight * basePixelRatio * basePixelRatio;
 
-function computeAdaptivePixelRatio(basePixelRatio) {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
-    const requestedPixels = width * height * basePixelRatio * basePixelRatio;
+    if (requestedPixels <= maxRenderPixels) return basePixelRatio;
 
-    if (requestedPixels <= MAX_RENDER_PIXELS) return basePixelRatio;
-    
-    const scale = Math.sqrt(MAX_RENDER_PIXELS / (width * height));
-    return Math.max(0.8, scale); 
+    const scale = Math.sqrt(maxRenderPixels / (renderWidth * renderHeight));
+    return Math.max(minPixelRatio, scale);
 }
 
 // 1. Eszköz típusának precízebb azonosítása
@@ -73,65 +55,229 @@ const cores = navigator.hardwareConcurrency || (isIOS ? 4 : 2); // iOS ad magoka
 // iOS nem ad memóriát, így ha undefined, a magok számából tippelünk (ha >=6 magos Apple chip, valószínűleg van 4GB+ RAM)
 const memory = navigator.deviceMemory || (isIOS && cores >= 6 ? 4 : 2); 
 
-// 3. Háromszintű (Tier) kategóriarendszer felállítása
-// 0 = Low (régi mobilok, irodai gépek), 1 = Mid (átlagos mobilok/tabletek), 2 = High (Gamer/M-szériás Mac, erős PC)
-let tier = 2; 
 
-if (memory <= 4 || cores <= 4) tier = 1; 
-if (memory <= 2 || cores <= 2) tier = 0; 
+const dpr = window.devicePixelRatio || 1;
+const batteryState = {
+    available: false,
+    level: null,
+    charging: null,
+};
+
+// 3. Többszintű (Tier) kategóriarendszer felállítása
+// -1 = Emergency, 0 = Low, 1 = Mid, 2 = High
+let tier = 2;
+
+
+
+const emergencyDevice =
+    memory <= 1 ||
+    cores <= 2 ||
+    (memory <= 2 && cores <= 2);
+
+if (emergencyDevice) {
+    tier = -1;
+} else if (memory <= 2 || cores <= 2) {
+    tier = 0;
+} else if (memory <= 4 || cores <= 4) {
+    tier = 1;
+}
 
 // Tabletek "leminősítése": a nagy képernyő miatt a Mid-tier beállítások biztonságosabbak számukra
-if (isTablet && tier === 2) tier = 1; 
+if (isTablet && tier === 2) tier = 1;
 
-// 4. Okos élsimítás (Anti-aliasing) döntés
-const dpr = window.devicePixelRatio || 1;
-// Telefonokon, ha nagyon sűrű a kijelző (Retina/OLED), felesleges az élsimítás
-const skipAntialias = isPhone && dpr >= 2; 
+const baseTier = tier;
+let batteryEmergencyActive = false;
+
+
+
+const tierNames = {
+    [-1]: 'EMERGENCY',
+    0: 'LOW',
+    1: 'MID',
+    2: 'HIGH',
+};
 
 // 5. Grafikai profilok dedikálása a szintekhez
 const profiles = {
+    [-1]: { // EMERGENCY TIER
+        basePixelRatio: Math.min(dpr, 0.65),
+        minPixelRatio: 0.55,
+        antialias: true,
+        shadows: true,
+        shadowMapSize: 256,
+        shadowType: THREE.BasicShadowMap,
+        exposure: 0.98,
+        power: 'low-power',
+        renderPixelBudget: 650_000,
+        shadowUpdateInterval: 320,
+    },
     0: { // LOW TIER
-        
-        pixelRatio: Math.min(dpr, 1.15), // Alacsonyabb felbontásból indítunk
-        antialias: true, 
-        shadows: true, 
-        shadowMapSize: 206, 
+        basePixelRatio: Math.min(dpr, 0.8),
+        minPixelRatio: 0.65,
+        antialias: true,
+        shadows: true,
+        shadowMapSize: 384,
+        shadowType: THREE.BasicShadowMap,
         exposure: 1.0,
-        power: 'low-power'
-       
-        
+        power: 'low-power',
+        renderPixelBudget: 800_000,
+        shadowUpdateInterval: 240,
     },
-    1: { // MID TIER (Tabletek, átlagos mobilok)
-        
-        pixelRatio: Math.min(dpr, 1.3), 
-        antialias: true, // Okos döntés alapján
-        shadows: true, 
-        shadowMapSize: 512, // Kisebb árnyéktérkép
+    1: { 
+        // MID TIER (Tabletek, átlagos mobilok)
+        basePixelRatio: Math.min(dpr, 1.3),
+        minPixelRatio: 0.75,
+        antialias: true,
+        shadows: true,
+        shadowMapSize: 512,
+        shadowType: THREE.PCFShadowMap,
         exposure: 1.05,
-        power: 'default'
+        power: 'default',
+        renderPixelBudget: 1_300_000,
+        shadowUpdateInterval: 200,
       
-        
     },
-    2: { // HIGH TIER (Erős asztali gépek)
-    
-        pixelRatio: Math.min(dpr, 1.75), 
-        antialias: true, 
-        shadows: true, 
-        shadowMapSize: 1024, 
-        exposure: 1.12,
-        power: 'high-performance'
+    2: {
         
+        // HIGH TIER (Erős asztali gépek)
+        basePixelRatio: Math.min(dpr, 1.6),
+        minPixelRatio: 0.85,
+        antialias: true,
+        shadows: true,
+        shadowMapSize: 1024,
+        shadowType: THREE.PCFShadowMap,
+        exposure: 1.12,
+        power: 'high-performance',
+        renderPixelBudget: 1_800_000,
+        shadowUpdateInterval: 100,
+       
+       
     }
 };
 
-const profile = profiles[tier];
+function createProfileForTier(selectedTier) {
+    const tierProfile = { ...profiles[selectedTier] };
 
-// Költségvetés-ellenőrzés
-profile.pixelRatio = computeAdaptivePixelRatio(profile.pixelRatio);
+    tierProfile.pixelRatio = computeAdaptivePixelRatio(
+        tierProfile.basePixelRatio,
+        tierProfile.renderPixelBudget,
+        tierProfile.minPixelRatio,
+        container.clientWidth || window.innerWidth,
+        container.clientHeight || window.innerHeight
+    );
 
-// 6. Renderer inicializálása
-const canvas = document.querySelector("#bg");
-const container = canvas?.parentElement || document.body;
+    return tierProfile;
+}
+let profile = createProfileForTier(tier);
+
+function applyRendererSettingsForProfile(currentProfile) {
+    renderer.setPixelRatio(currentProfile.pixelRatio);
+    renderer.toneMappingExposure = currentProfile.exposure;
+
+    if (currentProfile.shadows) {
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = currentProfile.shadowType;
+        renderer.shadowMap.autoUpdate = false;
+        renderer.shadowMap.needsUpdate = true;
+        return;
+    }
+
+    renderer.shadowMap.enabled = false;
+}
+
+// Fények csökkentése, Low és Emergency tier-nél keveseebb fény
+function applyLightVisibilityForTier(selectedTier) {
+    const lowTier = selectedTier <= 0;
+
+    rectReplacementLights.forEach((light, index) => {
+        light.visible = !lowTier || index === 0;
+    });
+
+    pointLights.forEach((light, index) => {
+        light.visible = !lowTier || index <= 1;
+    });
+}
+/*
+
+function refreshDebugOverlay() {
+    if (!debugOverlay) return;
+
+    const batteryText = batteryState.available
+        ? `${Math.round((batteryState.level ?? 0) * 100)}%${batteryState.charging ? ' charging' : ''}`
+        : 'n/a';
+
+    debugOverlay.textContent = `
+Tier: ${tier} (${tierNames[tier]})
+Device: ${isIOS ? 'iOS' : isPhone ? 'Phone' : isTablet ? 'Tablet' : 'Desktop'}
+Cores: ${cores} | Memory: ${memory}GB
+DPR: ${dpr.toFixed(2)} | PixelRatio: ${profile.pixelRatio.toFixed(2)}
+Battery: ${batteryText}
+Antialias: ${profile.antialias} | Shadows: ${profile.shadows}
+ShadowMapSize: ${profile.shadowMapSize} | Power: ${profile.power}
+`.trim();
+}
+*/
+
+function applyProfileForTier(selectedTier) {
+    tier = selectedTier;
+    profile = createProfileForTier(tier);
+
+    if (renderer) {
+        applyRendererSettingsForProfile(profile);
+    }
+    
+    sun.castShadow = profile.shadows;
+    sun.shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
+    sun.shadow.radius = tier <= 0 ? 0.8 : 1.6;
+    sun.shadow.camera.updateProjectionMatrix();
+    
+
+    applyLightVisibilityForTier(tier);
+    //refreshDebugOverlay();
+}
+
+function handleBatteryUpdate(battery) {
+    batteryState.available = true;
+    batteryState.level = battery.level;
+    batteryState.charging = battery.charging;
+
+    if (battery.level < 0.2) {
+        if (baseTier > -1 && !batteryEmergencyActive) {
+            batteryEmergencyActive = true;
+            applyProfileForTier(-1);
+            return;
+        }
+
+        //refreshDebugOverlay();
+        return;
+    }
+
+    if (batteryEmergencyActive) {
+        batteryEmergencyActive = false;
+        applyProfileForTier(baseTier);
+    } /*else {
+        refreshDebugOverlay();
+    }
+        */
+}
+
+function initBatteryMonitoring() {
+    if (typeof navigator.getBattery !== 'function') return;
+
+    navigator.getBattery()
+        .then((battery) => {
+            handleBatteryUpdate(battery);
+
+            const onBatteryChange = () => handleBatteryUpdate(battery);
+            battery.addEventListener('levelchange', onBatteryChange);
+            battery.addEventListener('chargingchange', onBatteryChange);
+        })
+        .catch(() => {});
+}
+
+
+
+// Renderer inicializálása
 const renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: profile.antialias,
@@ -139,25 +285,10 @@ const renderer = new THREE.WebGLRenderer({
     powerPreference: profile.power
 });
 
-renderer.setPixelRatio(profile.pixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight, false);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = profile.exposure;
-
-if (profile.shadows) {
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = tier === 1 ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
-    renderer.shadowMap.autoUpdate = false;
-    renderer.shadowMap.needsUpdate = true;
-} else {
-    renderer.shadowMap.enabled = false;
-}
-
-
-sun.castShadow = profile.shadows;
-sun.shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
-sun.shadow.camera.updateProjectionMatrix();
+applyRendererSettingsForProfile(profile);
 
 
 const ktx2Loader = new KTX2Loader();
@@ -167,17 +298,32 @@ ktx2Loader.detectSupport(renderer);
 const loader = new GLTFLoader();
 loader.setKTX2Loader(ktx2Loader);
 
-// ===== KIEGÉSZÍTŐ FÉNYEK =====
+
+// ----- Debug overlay -----
+/*
 const fpsOverlay = document.createElement("div");
 fpsOverlay.className = "fps-overlay";
 fpsOverlay.textContent = "FPS: --";
 document.body.appendChild(fpsOverlay);
 
+const debugOverlay = document.createElement("div");
+debugOverlay.className = "fps-overlay";
+debugOverlay.style.top = "60px";
+debugOverlay.style.fontSize = "11px";
+debugOverlay.style.whiteSpace = "pre-line";
+document.body.appendChild(debugOverlay);
+refreshDebugOverlay();
+
+*/
+initBatteryMonitoring();
+
 let fpsFrames = 0;
 let fpsLastUpdate = performance.now();
 let shadowDirty = true;
 let lastShadowUpdate = 0;
+let lastRenderTime = 0;
 
+/*
 function updateFpsDisplay(now) {
     fpsFrames += 1;
     if (now - fpsLastUpdate < 300) return;
@@ -186,6 +332,7 @@ function updateFpsDisplay(now) {
     fpsFrames = 0;
     fpsLastUpdate = now;
 }
+    */
 
 function requestShadowUpdate() {
     shadowDirty = true;
@@ -194,18 +341,18 @@ function requestShadowUpdate() {
 function updateShadowMap(now) {
     if (!profile.shadows) return;
 
-    const interval = tier === 0 ? 240 : 140;
+    const interval = profile.shadowUpdateInterval;
     if (shadowDirty && (now - lastShadowUpdate >= interval || lastShadowUpdate === 0)) {
         renderer.shadowMap.needsUpdate = true;
         lastShadowUpdate = now;
         shadowDirty = false;
     }
 }
-// ===== POINT LIGHTS — eredeti 3 =====
+// ===== POINT LIGHTS — eredeti 3, enyhén finomítva az új, alacsonyabb kameraszöghöz =====
 const pointLightConfigs = [
-    { pos: [3, 1.1, -2.2],   color: 0xffe8cc, intensity: 6 },
-    { pos: [3, 1.5, -2],   color: 0xffe8cc, intensity: 3 },
-    { pos: [0, 0.1, -3.2],     color: 0xfff4e6, intensity: 4 },
+    { pos: [2.6, 1.0, -1.9],   color: 0xffe8cc, intensity: 5.5 },  // kicsit közelebb hozva, mint eredeti (3, 1.1, -2.2)
+    { pos: [2.6, 1.3, -1.7],   color: 0xffe8cc, intensity: 2.8 },
+    { pos: [0, 0.3, -2.8],     color: 0xfff4e6, intensity: 0.5 },  // kicsit feljebb (0.1→0.3), hogy jobban látszódjon oldalról
 ];
 
 const pointLights = pointLightConfigs.map(cfg => {
@@ -216,11 +363,11 @@ const pointLights = pointLightConfigs.map(cfg => {
     return pl;
 });
 
-// ===== POINT LIGHTS — a RectAreaLight-ok kiváltására =====
+// ===== POINT LIGHTS — a RectAreaLight-ok kiváltására, csökkentett felül-hangsúllyal =====
 const rectReplacementConfigs = [
-    { pos: [-0.5, 2.2, 0.6], color: 0xffffff, intensity: 3.0, distance: 8 },
-    { pos: [-1.3, 2.4, 1.6], color: 0xffe8d0, intensity: 3.5, distance: 9 },
-    { pos: [1.7, 1.9, 1.0], color: 0xffe8d0, intensity: 2.8, distance: 8 },
+    { pos: [-0.5, 1.9, 0.5], color: 0xffffff, intensity: 2.6, distance: 8 },   // kicsit lejjebb (2.2→1.9), gyengébb (3.0→2.6) — kevésbé domináns felülről
+    { pos: [-1.2, 1.8, 1.4], color: 0xffe8d0, intensity: 0.6, distance: 9 },   // lejjebb (2.4→1.8), enyhén gyengébb
+    { pos: [1.6, 1.5, 0.9],  color: 0xffe8d0, intensity: 0.7, distance: 8 },   // lejjebb (1.9→1.5) — most inkább oldal-fény, mint felülfény
 ];
 
 const rectReplacementLights = rectReplacementConfigs.map(cfg => {
@@ -230,40 +377,9 @@ const rectReplacementLights = rectReplacementConfigs.map(cfg => {
     scene.add(pl);
     return pl;
 });
- //GUI fényeléshez
-/*
 
-
-
-const gui = new GUI();
-
-const sunFolder = gui.addFolder('Sun');
-sunFolder.add(sun.position, 'x', -10, 10, 0.1);
-sunFolder.add(sun.position, 'y', -10, 10, 0.1);
-sunFolder.add(sun.position, 'z', -10, 10, 0.1);
-sunFolder.add(sun, 'intensity', 0, 10, 0.1);
-
-pointLights.forEach((pl, i) => {
-    const f = gui.addFolder(`PointLight ${i}`);
-    f.add(pl.position, 'x', -8, 8, 0.1);
-    f.add(pl.position, 'y', -8, 8, 0.1);
-    f.add(pl.position, 'z', -8, 8, 0.1);
-    f.add(pl, 'intensity', 0, 15, 0.1);
-});
-
-rectLights.forEach((rl, i) => {
-    const f = gui.addFolder(`RectLight ${i}`);
-    f.add(rl.position, 'x', -8, 8, 0.1);
-    f.add(rl.position, 'y', -8, 8, 0.1);
-    f.add(rl.position, 'z', -8, 8, 0.1);
-    f.add(rl.rotation, 'x', -Math.PI, Math.PI, 0.01);
-    f.add(rl.rotation, 'y', -Math.PI, Math.PI, 0.01);
-    f.add(rl, 'intensity', 0, 20, 0.1);
-    f.add(rl, 'width', 0.1, 5, 0.1);
-    f.add(rl, 'height', 0.1, 5, 0.1);
-});
-
-*/
+// A pointLightConfigs és rectReplacementConfigs betöltése UTÁN, tier alapján szűrjük:
+applyLightVisibilityForTier(tier);
 
 // gizmo
 
@@ -299,7 +415,6 @@ let nyil = null;
 let dragging = false;
 let previousX = 0;
 let autoRotate = true;
-const mouse = new THREE.Vector2();
 
 
 function applyWoodMaterial(root, tintColor = null, roughnessOverride = null, aoIntensity = 1.0) {
@@ -345,13 +460,14 @@ let baseY = 0;
 
 const modelUrls = [
     /*
-    new URL('./models/kocka-ktx2.glb', import.meta.url).href,
-    new URL('./models/plane-ktx2.glb', import.meta.url).href,
-    new URL('./models/Nyil6.glb', import.meta.url).href,
-    */
-
     new URL('./models/fKisMeretKocka2.glb', import.meta.url).href,
     new URL('./models/PlaneMeret.glb', import.meta.url).href,
+    new URL('./models/Nyil6.glb', import.meta.url).href,
+
+    */
+
+    new URL('./models/kocka-ktx2.glb', import.meta.url).href,
+    new URL('./models/PlaneVilagosabb1-ktx2.glb', import.meta.url).href,
     new URL('./models/Nyil6.glb', import.meta.url).href,
 ];
 
@@ -372,7 +488,7 @@ Promise.all([
 
     // --- Plane ---
     scene.add(planeGltf.scene);
-    applyWoodMaterial(planeGltf.scene, 0xe8dfd0, 0.85); //  0xe8c3b0  0xe8dfd0
+    applyWoodMaterial(planeGltf.scene, null, 0.85); //  0xe8c3b0  0xe8dfd0
     plane = planeGltf.scene.getObjectByName("Plane") || planeGltf.scene;
     plane.receiveShadow = true;
     requestShadowUpdate();
@@ -405,12 +521,18 @@ function updateCameraProjection() {
 
     renderer.setSize(width, height, false);
 
-     // A régi, hibás sorok helyett:
-    const adaptivePixelRatio = computeAdaptivePixelRatio(profile.pixelRatio);
+    const adaptivePixelRatio = computeAdaptivePixelRatio(
+        profile.basePixelRatio,
+        profile.renderPixelBudget,
+        profile.minPixelRatio,
+        container.clientWidth || window.innerWidth,
+        container.clientHeight || window.innerHeight
+);
     renderer.setPixelRatio(adaptivePixelRatio);
 
-
     camera.aspect = aspect;
+
+     
 
     if (aspect < 1) {
         const radAngle = DEFAULT_FOV * Math.PI / 180;
@@ -428,9 +550,15 @@ window.addEventListener("resize", updateCameraProjection);
 updateCameraProjection();
 
 // Animation
+let animationFrameId = null;
+let animationRunning = false;
 
 function animate() {
-    requestAnimationFrame(animate);
+    
+    if(!animationRunning) return;
+    
+    animationFrameId = requestAnimationFrame(animate);
+    const now = performance.now();
 
     let isMoving = false;
 
@@ -448,7 +576,6 @@ function animate() {
         const yDiff = Math.abs(cubeStructure.position.y - previousY);
         const rotDiff = Math.abs(cubeStructure.rotation.y - previousRotation);
 
-        // "Mozgásban van" akkor, ha a rotáció/pozíció ténylegesen, érdemben változott
         isMoving = autoRotate || dragging || yDiff > 0.0001 || rotDiff > 0.0001;
     }
 
@@ -457,16 +584,22 @@ function animate() {
         renderer.shadowMap.needsUpdate = true;
     } else {
         // Csak álló helyzetben engedjük a ritkított/egyszeri frissítést
-        updateShadowMap(performance.now());
+        updateShadowMap(now);
     }
 
+    if (profile.shadowUpdateInterval > 0 && now - lastRenderTime < 1000 / 30 && tier === -1) {
+       // updateFpsDisplay(now);
+        return;
+    }
+
+    lastRenderTime = now;
     renderer.render(scene, camera);
-    updateFpsDisplay(performance.now());
+    //updateFpsDisplay(now);
 }
 
 // esemenykezeles
 
-window.addEventListener("mousedown", (e) => {
+canvas.addEventListener("mousedown", (e) => {
 
     if (!cubeStructure) return;
 
@@ -497,8 +630,7 @@ window.addEventListener("mousemove",(e)=>{
 
 // esemenykezeles — touch (mobil)
 
-window.addEventListener("touchstart", (e) => {
-
+canvas.addEventListener("touchstart", (e) => {
 
     if (!cubeStructure) return;
 
@@ -527,5 +659,55 @@ window.addEventListener("touchmove", (e) => {
 }, { passive: true });
 
 
-animate();
-//// háttér legyen fényesebb
+
+
+function startAnimation(){
+
+    if(animationRunning) return;
+
+    animationRunning = true;
+
+    animate();
+}
+
+function stopAnimation(){
+
+    animationRunning = false;
+
+    if(animationFrameId){
+
+        cancelAnimationFrame(animationFrameId);
+
+        animationFrameId=null;
+    }
+}
+
+// ===== Láthatóság-figyelés: scroll közben is szüneteltessen, ha a canvas nem látszik =====
+let canvasInView = true;
+
+const visibilityObserver = new IntersectionObserver(
+    (entries) => {
+        entries.forEach((entry) => {
+            canvasInView = entry.isIntersecting;
+
+            if (canvasInView && !document.hidden) {
+                startAnimation();
+            } else {
+                stopAnimation();
+            }
+        });
+    },
+    { threshold: 0.01 } // már akkor is "látható", ha csak 1%-a látszik
+);
+
+window.addEventListener("pagehide", stopAnimation);
+window.addEventListener("pageshow", () => {
+    if (!document.hidden) {
+        startAnimation();
+    }
+});
+
+visibilityObserver.observe(canvas);
+
+
+startAnimation();
