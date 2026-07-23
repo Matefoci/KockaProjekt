@@ -11,7 +11,6 @@ scene.fog = new THREE.Fog(0xf9f7f4, 1.5, 45);
 const canvas = document.querySelector("#bg");
 const container = canvas?.parentElement || document.body;
 
-
 const sun = new THREE.DirectionalLight(0xfff1e0, 0.8);
 sun.position.set(4.2, 6.2, 3.2);
 sun.castShadow = true;
@@ -87,7 +86,6 @@ if (isTablet && tier === 2) tier = 1;
 
 const baseTier = tier;
 let batteryEmergencyActive = false;
-
 
 
 const tierNames = {
