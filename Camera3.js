@@ -453,6 +453,7 @@ function applyWoodMaterial(root, tintColor = null, roughnessOverride = null, aoI
 }
 
 
+
 const LIFT_HEIGHT = 0.1;
 const LIFT_SPEED = 0.05;
 let baseY = 0;
@@ -469,7 +470,6 @@ const modelUrls = [
     new URL('./models/PlaneVilagosabb1-ktx2.glb', import.meta.url).href,
     new URL('./models/Nyil6.glb', import.meta.url).href,
 ];
-
 
 Promise.all([
     loader.loadAsync(modelUrls[0]),
@@ -532,6 +532,7 @@ function updateCameraProjection() {
     camera.aspect = aspect;
 
      
+
     if (aspect < 1) {
         const radAngle = DEFAULT_FOV * Math.PI / 180;
         const vFovRad = 2 * Math.atan(Math.tan(radAngle / 2) / aspect);
@@ -655,6 +656,8 @@ window.addEventListener("touchmove", (e) => {
     cubeStructure.rotation.y += delta * 0.004;
 
 }, { passive: true });
+
+
 
 
 function startAnimation(){
