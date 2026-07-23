@@ -11,6 +11,7 @@ scene.fog = new THREE.Fog(0xf9f7f4, 1.5, 45);
 const canvas = document.querySelector("#bg");
 const container = canvas?.parentElement || document.body;
 
+
 const sun = new THREE.DirectionalLight(0xfff1e0, 0.8);
 sun.position.set(4.2, 6.2, 3.2);
 sun.castShadow = true;
@@ -86,6 +87,7 @@ if (isTablet && tier === 2) tier = 1;
 
 const baseTier = tier;
 let batteryEmergencyActive = false;
+
 
 
 const tierNames = {
@@ -465,9 +467,10 @@ const modelUrls = [
     */
 
     new URL('./models/kocka-ktx2.glb', import.meta.url).href,
-    new URL('./models/PlaneVilagosabb1-ktx2.glb', import.meta.url).href,
+    new URL('./models/PlaneVilagosabb-ktx2.glb', import.meta.url).href,
     new URL('./models/Nyil6.glb', import.meta.url).href,
 ];
+
 
 Promise.all([
     loader.loadAsync(modelUrls[0]),
@@ -485,7 +488,7 @@ Promise.all([
 
     // --- Plane ---
     scene.add(planeGltf.scene);
-    applyWoodMaterial(planeGltf.scene, null, 0.85); //  0xe8c3b0  0xe8dfd0
+    applyWoodMaterial(planeGltf.scene, 0xe8dfd0, 0.85); //  0xe8c3b0  0xe8dfd0
     plane = planeGltf.scene.getObjectByName("Plane") || planeGltf.scene;
     plane.receiveShadow = true;
     requestShadowUpdate();
