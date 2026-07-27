@@ -1,7 +1,9 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+//import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
 
 const scene = new THREE.Scene();
@@ -28,7 +30,7 @@ sun.shadow.camera.far = 20;
 scene.add(sun);
 
 
-const DEFAULT_FOV = 22;
+const DEFAULT_FOV = 22; //22
 const camera = new THREE.PerspectiveCamera(DEFAULT_FOV, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(3.3, 1.5, -3.3);
 camera.lookAt(0, 0.1, 0);
@@ -112,44 +114,44 @@ const profiles = {
         shadowUpdateInterval: 320,
     },
     0: { // LOW TIER
-        basePixelRatio: Math.min(dpr, 0.8),
-        minPixelRatio: 0.65,
+         basePixelRatio: Math.min(dpr, 0.65),
+        minPixelRatio: 0.55,
         antialias: true,
         shadows: true,
-        shadowMapSize: 384,
+        shadowMapSize: 256,
         shadowType: THREE.BasicShadowMap,
-        exposure: 1.0,
+        exposure: 0.98,
         power: 'low-power',
-        renderPixelBudget: 800_000,
-        shadowUpdateInterval: 240,
+        renderPixelBudget: 650_000,
+        shadowUpdateInterval: 320,
     },
     1: { 
         // MID TIER (Tabletek, átlagos mobilok)
-        basePixelRatio: Math.min(dpr, 1.3),
-        minPixelRatio: 0.75,
+         basePixelRatio: Math.min(dpr, 0.65),
+        minPixelRatio: 0.55,
         antialias: true,
         shadows: true,
-        shadowMapSize: 512,
-        shadowType: THREE.PCFShadowMap,
-        exposure: 1.05,
-        power: 'default',
-        renderPixelBudget: 1_300_000,
-        shadowUpdateInterval: 200,
+        shadowMapSize: 256,
+        shadowType: THREE.BasicShadowMap,
+        exposure: 0.98,
+        power: 'low-power',
+        renderPixelBudget: 650_000,
+        shadowUpdateInterval: 320,
       
     },
     2: {
         
         // HIGH TIER (Erős asztali gépek)
-        basePixelRatio: Math.min(dpr, 1.6),
-        minPixelRatio: 0.85,
+       basePixelRatio: Math.min(dpr, 0.65),
+        minPixelRatio: 0.55,
         antialias: true,
         shadows: true,
-        shadowMapSize: 1024,
-        shadowType: THREE.PCFShadowMap,
-        exposure: 1.12,
-        power: 'high-performance',
-        renderPixelBudget: 1_800_000,
-        shadowUpdateInterval: 100,
+        shadowMapSize: 256,
+        shadowType: THREE.BasicShadowMap,
+        exposure: 0.98,
+        power: 'low-power',
+        renderPixelBudget: 650_000,
+        shadowUpdateInterval: 320,
        
        
     }
@@ -171,6 +173,10 @@ function createProfileForTier(selectedTier) {
 let profile = createProfileForTier(tier);
 
 function applyRendererSettingsForProfile(currentProfile) {
+    sun.castShadow = profile.shadows;
+    sun.shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
+    sun.shadow.camera.updateProjectionMatrix();
+
     renderer.setPixelRatio(currentProfile.pixelRatio);
     renderer.toneMappingExposure = currentProfile.exposure;
 
@@ -197,7 +203,7 @@ function applyLightVisibilityForTier(selectedTier) {
         light.visible = !lowTier || index <= 1;
     });
 }
-/*
+
 
 function refreshDebugOverlay() {
     if (!debugOverlay) return;
@@ -216,7 +222,7 @@ Antialias: ${profile.antialias} | Shadows: ${profile.shadows}
 ShadowMapSize: ${profile.shadowMapSize} | Power: ${profile.power}
 `.trim();
 }
-*/
+
 
 function applyProfileForTier(selectedTier) {
     tier = selectedTier;
@@ -230,10 +236,8 @@ function applyProfileForTier(selectedTier) {
     sun.shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
     sun.shadow.radius = tier <= 0 ? 0.8 : 1.6;
     sun.shadow.camera.updateProjectionMatrix();
-    
-
     applyLightVisibilityForTier(tier);
-    //refreshDebugOverlay();
+    refreshDebugOverlay();
 }
 
 function handleBatteryUpdate(battery) {
@@ -248,17 +252,17 @@ function handleBatteryUpdate(battery) {
             return;
         }
 
-        //refreshDebugOverlay();
+        refreshDebugOverlay();
         return;
     }
 
     if (batteryEmergencyActive) {
         batteryEmergencyActive = false;
         applyProfileForTier(baseTier);
-    } /*else {
+    } {
         refreshDebugOverlay();
     }
-        */
+        
 }
 
 function initBatteryMonitoring() {
@@ -291,16 +295,17 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 applyRendererSettingsForProfile(profile);
 
 
-const ktx2Loader = new KTX2Loader();
-ktx2Loader.setTranscoderPath(import.meta.env.BASE_URL + 'basis/');
+//const ktx2Loader = new KTX2Loader();
+//ktx2Loader.setTranscoderPath(import.meta.env.BASE_URL + 'basis/');
 //ktx2Loader.setTranscoderPath('https://unpkg.com/three/examples/jsm/libs/basis/');
-ktx2Loader.detectSupport(renderer);
+//ktx2Loader.detectSupport(renderer);
 const loader = new GLTFLoader();
-loader.setKTX2Loader(ktx2Loader);
+loader.setMeshoptDecoder(MeshoptDecoder);
+//loader.setKTX2Loader(ktx2Loader);
 
 
 // ----- Debug overlay -----
-/*
+
 const fpsOverlay = document.createElement("div");
 fpsOverlay.className = "fps-overlay";
 fpsOverlay.textContent = "FPS: --";
@@ -314,7 +319,7 @@ debugOverlay.style.whiteSpace = "pre-line";
 document.body.appendChild(debugOverlay);
 refreshDebugOverlay();
 
-*/
+
 initBatteryMonitoring();
 
 let fpsFrames = 0;
@@ -323,7 +328,7 @@ let shadowDirty = true;
 let lastShadowUpdate = 0;
 let lastRenderTime = 0;
 
-/*
+
 function updateFpsDisplay(now) {
     fpsFrames += 1;
     if (now - fpsLastUpdate < 300) return;
@@ -332,7 +337,7 @@ function updateFpsDisplay(now) {
     fpsFrames = 0;
     fpsLastUpdate = now;
 }
-    */
+    
 
 function requestShadowUpdate() {
     shadowDirty = true;
@@ -391,18 +396,19 @@ function createRotationGizmo(target){
     gizmoGroup = new THREE.Group();
     target.add(gizmoGroup);
 
+    // ÚJ: ellensúlyozzuk a szülő (kvantált mesh) skálázását
+    const inverseScale = 1 / target.scale.x; // uniform skálázás esetén (x=y=z) ez elég
+    gizmoGroup.scale.setScalar(inverseScale);
 
     // Tengely
     axis = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.04, 0.04, 1.2, 32),
+        new THREE.CylinderGeometry(0.012, 0.012, 0.3, 32),
         new THREE.MeshStandardMaterial({ color: 0xffffff })
     );
-    axis.position.set(0, 2.6, 0);
+    axis.position.set(0, 0.65, 0);
     axis.castShadow = false;
     axis.receiveShadow = false;
     gizmoGroup.add(axis);
-
-
 }
 
 
@@ -466,9 +472,9 @@ const modelUrls = [
 
     */
 
-    new URL('./models/kocka-ktx2.glb', import.meta.url).href,
-    new URL('./models/PlaneVilagosabb1-ktx2.glb', import.meta.url).href,
-    new URL('./models/Nyil6.glb', import.meta.url).href,
+    new URL('./models/Fa768-optimized.glb', import.meta.url).href,
+    new URL('./models/Vilagosabb256-optimized.glb', import.meta.url).href,
+    new URL('./models/Nyil6-optimized.glb', import.meta.url).href,
 ];
 
 
@@ -482,13 +488,19 @@ Promise.all([
     scene.add(kockaGltf.scene);
     applyWoodMaterial(kockaGltf.scene);
     cubeStructure = kockaGltf.scene.getObjectByName("KockaNoArray") || kockaGltf.scene;
+    console.log("cubeStructure név:", cubeStructure.name, "pozíció:", cubeStructure.position);
+
+    // Írjuk ki az egész hierarchiát, hogy lássuk, milyen nevek maradtak meg
+    kockaGltf.scene.traverse((obj) => {
+        console.log(obj.type, obj.name);
+    });
     baseY = cubeStructure.position.y;
     createRotationGizmo(cubeStructure);
    
 
     // --- Plane ---
     scene.add(planeGltf.scene);
-    applyWoodMaterial(planeGltf.scene, 0xe8dfd0, 0.85); //  0xe8c3b0  0xe8dfd0
+    applyWoodMaterial(planeGltf.scene, null, 0.85); //  0xe8c3b0  0xe8dfd0
     plane = planeGltf.scene.getObjectByName("Plane") || planeGltf.scene;
     plane.receiveShadow = true;
     requestShadowUpdate();
@@ -501,13 +513,14 @@ Promise.all([
         child.castShadow = false;
         child.receiveShadow = false;
     });
-    nyil.scale.setScalar(0.1);
-    nyil.scale.y = 0.08;
-    nyil.position.set(0, 2.8, -1);
+    nyil.scale.setScalar(0.025);
+    //nyil.scale.y = 0.01;
+    nyil.position.set(0, 0.75, -0.15);
     gizmoGroup.add(nyil); 
     nyil.rotation.z += Math.PI; 
 
-    
+    scene.updateMatrixWorld(true);
+   
     renderer.compile(scene, camera);
 }).catch((error) => {
     console.error('A modellek betöltése sikertelen:', error);
@@ -588,13 +601,13 @@ function animate() {
     }
 
     if (profile.shadowUpdateInterval > 0 && now - lastRenderTime < 1000 / 30 && tier === -1) {
-       // updateFpsDisplay(now);
+        updateFpsDisplay(now);
         return;
     }
 
     lastRenderTime = now;
     renderer.render(scene, camera);
-    //updateFpsDisplay(now);
+    updateFpsDisplay(now);
 }
 
 // esemenykezeles
